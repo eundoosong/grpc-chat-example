@@ -1,0 +1,1 @@
+hello, guys. I'm a stream data from go-client.
