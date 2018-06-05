@@ -63,12 +63,14 @@ public class ChatServer {
         }
 
         @Override
-        public StreamObserver<File> sendFile(final StreamObserver<Url> responseObserver) {
+        public StreamObserver<File> uploadFiles(final StreamObserver<FileIds> responseObserver) {
             return new StreamObserver<File>() {
+                int fileCount;
                 @Override
                 public void onNext(File file) {
-                    file.getData();
+                    fileCount++;
                     logger.info("new file :" + file.getName() + ", " + file.getType());
+                    logger.info("the number of files :" + fileCount);
                 }
 
                 @Override
@@ -79,7 +81,7 @@ public class ChatServer {
                 @Override
                 public void onCompleted() {
                     logger.info("onComplete");
-                    responseObserver.onNext(Url.newBuilder().setUrl("localhost:8080").build());
+                    responseObserver.onNext(FileIds.newBuilder().addId("ID1").build());
                     responseObserver.onCompleted();
                 }
             };
