@@ -1,14 +1,15 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"time"
-	"io/ioutil"
+	"io"
 
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	chat "eundoosong/grpc-examples/client/go/gen"
 	"fmt"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"os"
 )
 
@@ -20,7 +21,9 @@ const (
 
 func menu() {
 	fmt.Println("1. send a message")
-	fmt.Println("2. send a file")
+	fmt.Println("2. upload files")
+	fmt.Println("3. download files")
+	fmt.Println("4. transcode files")
 	fmt.Println("99. exit")
 }
 
@@ -37,7 +40,7 @@ func sendMessage(client chat.ChatServiceClient, user string, text string) {
 
 }
 
-func sendFile(client chat.ChatServiceClient) {
+func uploadFiles(client chat.ChatServiceClient) {
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
 		return
@@ -49,13 +52,85 @@ func sendFile(client chat.ChatServiceClient) {
 		log.Fatalf("error: %v", err)
 		return
 	}
-  stream.Send(&chat.File{Name: file, Type: "plain/text", Len: int32(len(data)), Data: data})
-	res, err := stream.CloseAndRecv();
+	for i := 0; i < 10; i++ {
+		if err := stream.Send(&chat.File{Name: file,
+													 Type: "plain/text",
+													 Len: int32(len(data)),
+													 Data: data}); err != nil {
+			log.Fatalf("%v.Send = %v", stream, err)
+		}
+	}
+	res, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	log.Printf("file length : %d", len(res.Id))
+	for id := range res.Id {
+		log.Printf("id: %#s", id)
+	}
+}
+
+func downloadFiles(client chat.ChatServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	list := []string{"aaaa", "bbbb"}
+	stream, err := client.DownloadFiles(ctx, &chat.FileIds{Id: list})
+	if err != nil {
+		log.Fatalf("%v.downloadFiles(_) = _, %v", client, err)
+	}
+
+	for {
+		file, err := stream.Recv()
+		if err == io.EOF {
+			log.Printf("EOF")
+			break
+		}
+		if err != nil {
+			log.Fatalf("%v.downloadFiles(_) = _, %v", client, err)
+		}
+		log.Println(file.Name)
+	}
+}
+
+func TranscodeFiles(client chat.ChatServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	stream, err := client.ConvertFiles(ctx)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 		return
 	}
-	log.Printf("url : %v", res)
+
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		return
+	}
+	waitch := make(chan struct{})
+	go func() {
+		for {
+			file, err := stream.Recv()
+			if err == io.EOF {
+				log.Printf("EOF")
+				close(waitch)
+				break
+			}
+			if err != nil {
+				log.Fatalf("%v.downloadFiles(_) = _, %v", client, err)
+			}
+			log.Println(file.Name)
+		}
+	}()
+
+	for i := 0; i < 10; i++ {
+		if err := stream.Send(&chat.File{Name: file,
+													 Type: "plain/text",
+													 Len: int32(len(data)),
+													 Data: data}); err != nil {
+			log.Fatalf("%v.Send = %v", stream, err)
+		}
+	}
+	stream.CloseSend()
+	<-waitch
 }
 
 func main() {
@@ -73,18 +148,21 @@ func main() {
 
 	var input string
 	for {
-		menu();
+		menu()
 		fmt.Scanln(&input)
 		if input == "1" {
-			var text string;
-			fmt.Print("message("+user+"): ")
+			var text string
+			fmt.Print("message(" + user + "): ")
 			fmt.Scanln(&text)
 			sendMessage(client, user, text)
 		} else if input == "2" {
-			sendFile(client)
+			uploadFiles(client)
+		} else if input == "3" {
+			downloadFiles(client)
+		} else if input == "4" {
+			TranscodeFiles(client)
 		} else {
-			break;
+			break
 		}
-
 	}
 }
